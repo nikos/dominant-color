@@ -1,7 +1,10 @@
 package de.nava.color;
 
 import com.google.common.primitives.Doubles;
+import com.google.common.util.concurrent.AtomicLongMap;
 import org.apache.commons.math.stat.StatUtils;
+import org.apache.commons.math.stat.descriptive.moment.Kurtosis;
+import org.apache.commons.math.stat.descriptive.moment.Skewness;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,9 +30,15 @@ public class BitmapDominantColor {
 
 
     public static void main(String args[]) throws Exception {
-        File file = new File("/Users/niko/Pictures/007.jpg");
+        File imgDir = new File("src/test/resources/sample-images");
+        
+        //File img = new File(imgDir, "0955.jpg"); // mostly green
+        File img = new File(imgDir, "0793.jpg"); // multi-colored red/orange/yellow
+        //File img = new File(imgDir, "0241.jpg"); // black jeans on white/grey background
+        //File img = new File(imgDir, "0443.jpg"); // half yellow/black
 
-        LOGGER.info("Color code is {}", analyseColors(file));
+        Result result = analyseColors(img);
+        LOGGER.info("Color code is #{}", result.getHexCode());
     }
 
     public static Result analyseColors(File file) throws IOException {
@@ -49,6 +58,7 @@ public class BitmapDominantColor {
         int width = image.getWidth();
 
         Map<Color, Double> colorDist = new HashMap<Color, Double>();
+        AtomicLongMap<Color> colorCount = AtomicLongMap.create();
 
         final int alphaThershold = 10;
         long pixelCount = 0;
@@ -62,13 +72,12 @@ public class BitmapDominantColor {
                 if (rgbArr[0] <= alphaThershold)
                    continue; //ignore
 
-                pixelCount++;
                 avgAlpha += rgbArr[0];
 
-                Color cl = new Color(rgbArr[1], rgbArr[2], rgbArr[3]);
-                double dist = 0.0d;
-                if (!colorDist.containsKey(cl)) {
-                    colorDist.put(cl, 0.0d);
+                Color clr = new Color(rgbArr[1], rgbArr[2], rgbArr[3]);
+                colorCount.getAndIncrement(clr);
+                if (!colorDist.containsKey(clr)) {
+                    double dist = 0.0d;
 
                     for (int y2 = 0; y2 < height; y2++) {
                         for (int x2 = 0; x2 < width; x2++) {
@@ -79,15 +88,18 @@ public class BitmapDominantColor {
                                 continue; //ignore
 
                             dist += Math.sqrt(Math.pow((double) (rgbArr2[1] - rgbArr[1]), 2) +
-                                    Math.pow((double) (rgbArr2[2] - rgbArr[2]), 2) +
-                                    Math.pow((double) (rgbArr2[3] - rgbArr[3]), 2));
-                        }
-                    }
+                                              Math.pow((double) (rgbArr2[2] - rgbArr[2]), 2) +
+                                              Math.pow((double) (rgbArr2[3] - rgbArr[3]), 2));
+                        } // for-x2
+                    } // inner for-y2 loop
 
-                    colorDist.put(cl, dist);
+                    colorDist.put(clr, dist);
                 }
-            }
-        }
+                pixelCount++;
+            } // for-x
+        } // outer for-y loop
+
+        LOGGER.info("COUNTER {} <-> {}", colorCount.sum(), pixelCount);
 
         // clamp alpha
         avgAlpha = avgAlpha / pixelCount;
@@ -99,28 +111,45 @@ public class BitmapDominantColor {
         TreeMap<Color, Double> sorted_map = new TreeMap<Color, Double>(bvc);
         sorted_map.putAll(colorDist);
 
-        // take weighted average of top 2% of colors
+        // take weighted average of top 2% colors
         double threshold = 0.02;
         int nrToThreshold = Math.max(1, (int)(colorDist.size() * threshold));
+        int mostThreshold = Math.max(1, (int)(colorDist.size() * 0.8));
         LOGGER.info("--> include {} out of {} values", nrToThreshold, colorDist.size());
         Map<Color, Double> clrsDist = new HashMap<Color, Double>();
+        java.util.List<Double> topDist = new ArrayList<Double>();
+        java.util.List<Double> mostDist = new ArrayList<Double>();
         java.util.List<Double> allDist = new ArrayList<Double>();
         int i = 0;
         for (Map.Entry<Color, Double> e : sorted_map.entrySet()) {
             Double distance = 1.0d / Math.max(1.0, e.getValue());
-            allDist.add(distance);
             if (i < nrToThreshold) {
-                clrsDist.put(e.getKey(), distance);
+                Color clr = e.getKey();
+                clrsDist.put(clr, distance);
+                topDist.add(e.getValue());
             }
+            if (i < mostThreshold) {
+                mostDist.add(e.getValue());
+            }
+            allDist.add(e.getValue());
             i++;
         }
 
         // calculate statistics
-        double[] distArr = Doubles.toArray(allDist);
-        double min = StatUtils.min(distArr);
-        double max = StatUtils.max(distArr);
-        double mean = StatUtils.mean(distArr);
-        double variance = StatUtils.variance(distArr);
+        double[] allDistsArr = Doubles.toArray(allDist);
+        double allDistsMean = StatUtils.mean(allDistsArr);
+        double allDistsVariance = StatUtils.variance(allDistsArr);
+
+        Skewness skewness = new Skewness();
+        double skAll = skewness.evaluate(allDistsArr);
+        double skMost = skewness.evaluate(Doubles.toArray(mostDist));
+        Kurtosis kurtosis = new Kurtosis();
+        double kurtAll = kurtosis.evaluate(allDistsArr);
+        double kurtMost = kurtosis.evaluate(Doubles.toArray(mostDist));
+
+        double[] topDistsArr = Doubles.toArray(topDist);
+        double topDistsMean = StatUtils.mean(topDistsArr);
+        double topDistsVariance = StatUtils.variance(topDistsArr);
 
         //
         double sumDist = 0.0d;
@@ -137,10 +166,10 @@ public class BitmapDominantColor {
                                         (int) (sumG / sumDist),
                                         (int) (sumB / sumDist));
 
-        return new Result(dominantColor, min, max, mean, variance, nrToThreshold, colorDist.size());
+        return new Result(dominantColor, allDistsMean, topDistsMean, skAll, skMost, kurtAll, kurtMost, nrToThreshold, colorDist.size());
     }
 
-    
+
 
 
 
@@ -156,19 +185,29 @@ public class BitmapDominantColor {
     static class Result {
 
         public final Color color;
-        public final double min;
-        public final double max;
-        public final double mean;
-        public final double variance;
+        public final double allMean;
+        public final double topMean;
         public final int nrToThreshold;
         public final int nrColors;
 
-        public Result(Color color, double min, double max, double mean, double variance, int nrToThreshold, int nrColors) {
+        // Skewness:    http://en.wikipedia.org/wiki/Skewness
+        //              http://de.wikipedia.org/wiki/Schiefe_(Statistik)
+        public double skAll;
+        public double skMost;
+
+        // Kurtosis: http://en.wikipedia.org/wiki/Kurtosis
+        //           http://de.wikipedia.org/wiki/W%C3%B6lbung_(Statistik)
+        public double kurtAll;
+        public double kurtMost;
+
+        public Result(Color color, double allMean, double topMean, double skAll, double skMost, double kurtAll, double kurtMost, int nrToThreshold, int nrColors) {
             this.color = color;
-            this.min = min;
-            this.max = max;
-            this.mean = mean;
-            this.variance = variance;
+            this.allMean = allMean;
+            this.topMean = topMean;
+            this.skAll = skAll;
+            this.skMost = skMost;
+            this.kurtAll = kurtAll;
+            this.kurtMost = kurtMost;
             this.nrToThreshold = nrToThreshold;
             this.nrColors = nrColors;
         }
@@ -181,7 +220,7 @@ public class BitmapDominantColor {
         }
 
     }
-    
+
 
     static class ValueComparator implements Comparator {
 

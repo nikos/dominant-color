@@ -8,7 +8,6 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.FilenameFilter;
 import java.io.Writer;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -31,7 +30,7 @@ public class Analyzer {
         writer.append("<html><head><title>Image Color Analysis</title>\n")
                 .append("<style type=\"text/css\">\n")
                 .append("td.square { padding-right: 12px; } \n")
-                .append("tr > td { padding-bottom: 12px; } \n")
+                .append("tr > td { font-size:9px; padding-bottom: 12px; } \n")
                 .append(".square div { border: 1px gray solid;} \n")
                 .append("</style></head>\n")
                 .append("<body><table>\n");
@@ -64,9 +63,11 @@ public class Analyzer {
             String htmlFragment = templateStr.replaceAll("URL", imageFile.getAbsolutePath())
                                 .replaceAll("TITLE", imageFile.getName())
                                 .replaceAll("HEXCODE", dominantColor.getHexCode())
-                                .replaceAll("INFO", String.format("%d / %d<br>%f - %f<br>%f +/- %f<br>%f %%", dominantColor.nrToThreshold, dominantColor.nrColors,
-                                        dominantColor.min * 10e6, dominantColor.max * 10e6, dominantColor.mean * 10e6, dominantColor.variance* 10e6,
-                                        (dominantColor.variance / dominantColor.mean) * 10e6));
+                                .replaceAll("INFO", String.format("%d / %d<br>T%.0f<br>A%.0f<br>%.2f %.2f<br>%.2f %.2f", dominantColor.nrToThreshold, dominantColor.nrColors,
+                                        dominantColor.topMean ,
+                                        dominantColor.allMean ,
+                                        dominantColor.skAll, dominantColor.skMost,
+                                        dominantColor.kurtAll, dominantColor.kurtMost));
             writer.append(htmlFragment);
             if (nr % 20 == 0) {
                 writer.append("</tr>\n\n<tr>");
