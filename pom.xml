@@ -62,5 +62,12 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-    
+
+    <distributionManagement>
+        <repository>
+            <id>gh-pages</id>
+            <url>file:///${basedir}/../dominant-color-pages/repository/</url>
+        </repository>
+    </distributionManagement>
+
 </project>
